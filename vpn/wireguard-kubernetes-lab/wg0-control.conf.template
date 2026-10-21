@@ -1,0 +1,15 @@
+# /etc/wireguard/wg0.conf on k8s-control
+[Interface]
+Address = 10.20.0.1/24
+ListenPort = 51820
+PrivateKey = <CONTROL_PRIVATE_KEY>
+
+# k8s-worker1
+[Peer]
+PublicKey = <WORKER1_PUBLIC_KEY>
+AllowedIPs = 10.20.0.2/32
+
+# k8s-worker2
+[Peer]
+PublicKey = <WORKER2_PUBLIC_KEY>
+AllowedIPs = 10.20.0.3/32

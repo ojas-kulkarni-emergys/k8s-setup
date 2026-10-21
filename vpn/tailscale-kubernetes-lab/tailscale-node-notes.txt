@@ -1,0 +1,14 @@
+Tailscale node notes (not a Tailscale config file)
+=================================================
+Expected device names:
+  k8s-control
+  k8s-worker1
+  k8s-worker2
+
+On each node, run the setup script with that node's name and authenticate it.
+Tailscale assigns each device its own address, usually in 100.64.0.0/10.
+Use `tailscale status` and `tailscale ip -4` to discover actual addresses.
+
+No static peer config is normally required. If you use Tailscale ACLs/grants,
+configure access for only the nodes and ports needed by your lab. Do not
+publish auth keys or node credentials.

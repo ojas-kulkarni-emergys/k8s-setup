@@ -1,0 +1,21 @@
+# /etc/openvpn/client/workerX.conf
+# Replace vpn.example.com and workerX with actual values.
+# Certificates/keys should be unique to each worker.
+client
+dev tun
+proto udp
+remote vpn.example.com 1194
+resolv-retry infinite
+nobind
+persist-key
+persist-tun
+remote-cert-tls server
+verify-x509-name server name
+tls-version-min 1.2
+tls-crypt /etc/openvpn/client/workerX/ta.key
+ca /etc/openvpn/client/workerX/ca.crt
+cert /etc/openvpn/client/workerX/workerX.crt
+key /etc/openvpn/client/workerX/workerX.key
+auth-nocache
+data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305
+verb 3

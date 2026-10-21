@@ -1,0 +1,29 @@
+# /etc/openvpn/server/server.conf
+# Template only: paths must point to valid certificates/keys.
+port 1194
+proto udp
+dev tun
+topology subnet
+server 10.8.0.0 255.255.255.0
+ifconfig-pool-persist /var/lib/openvpn/ipp.txt
+client-config-dir /etc/openvpn/server/ccd
+
+ca /etc/openvpn/server/ca.crt
+cert /etc/openvpn/server/server.crt
+key /etc/openvpn/server/server.key
+dh none
+ecdh-curve prime256v1
+crl-verify /etc/openvpn/server/crl.pem
+tls-crypt /etc/openvpn/server/ta.key
+remote-cert-tls client
+tls-version-min 1.2
+verify-client-cert require
+data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305
+
+client-to-client
+keepalive 10 60
+persist-key
+persist-tun
+user nobody
+group nogroup
+verb 3

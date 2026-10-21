@@ -1,0 +1,10 @@
+# /etc/wireguard/wg0.conf on k8s-worker1
+[Interface]
+Address = 10.20.0.2/24
+PrivateKey = <WORKER1_PRIVATE_KEY>
+
+[Peer]
+PublicKey = <CONTROL_PUBLIC_KEY>
+Endpoint = <CONTROL_PUBLIC_IP_OR_DNS>:51820
+AllowedIPs = 10.20.0.0/24
+PersistentKeepalive = 25
