@@ -1,0 +1,84 @@
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: distilgpt2
+  namespace: llm-d-deployments
+  labels:
+    app.kubernetes.io/name: distilgpt2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: distilgpt2
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: distilgpt2
+        inference.networking.k8s.io/pool: llm-router
+    spec:
+      containers:
+        - name: distilgpt2
+          image: vllm/vllm-openai-cpu:latest-x86_64
+          imagePullPolicy: IfNotPresent
+          args:
+            - distilgpt2
+            - --host
+            - "0.0.0.0"
+            - --port
+            - "8000"
+            - --max-model-len
+            - "256"
+            - --max-num-seqs
+            - "1"
+            - --enforce-eager
+            - --gpu-memory-utilization
+            - "0.4"
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            - name: HF_HOME
+              value: /root/.cache/huggingface
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: OMP_NUM_THREADS
+              value: "2"
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "2Gi"
+            limits:
+              cpu: "2"
+              memory: "3Gi"
+          volumeMounts:
+            - name: huggingface-cache
+              mountPath: /root/.cache/huggingface
+              readOnly: true
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: huggingface-cache
+          hostPath:
+            path: /home/ojas/.cache/huggingface
+            type: Directory
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: distilgpt2-service
+  namespace: llm-d-deployments
+spec:
+  selector:
+    app.kubernetes.io/name: distilgpt2
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+  type: ClusterIP

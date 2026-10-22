@@ -22,9 +22,14 @@ fi
 
 DEVICE_NAME="${1:-$(hostname -s)}"
 
-sudo apt-get update
-sudo apt-get install -y curl ca-certificates
-curl -fsSL https://tailscale.com/install.sh | sh
+if ! command -v tailscale >/dev/null 2>&1; then
+  apt-get update
+  apt-get install -y curl ca-certificates
+  installer="$(mktemp)"
+  trap 'rm -f "$installer"' EXIT
+  curl -fsSL https://tailscale.com/install.sh -o "$installer"
+  sh "$installer"
+fi
 
 systemctl enable --now tailscaled
 echo
@@ -40,3 +45,12 @@ echo "This node's Tailscale IPv4 address(es):"
 sudo tailscale ip -4
 echo
 echo "Repeat on the control plane and both workers, using unique device names."
+
+# sudo systemctl stop tailscaled
+# sudo apt-get purge -y tailscale tailscale-archive-keyring
+
+# sudo rm -rf /var/lib/tailscale /var/run/tailscale
+# sudo mkdir -p /var/run/tailscale
+
+# sudo systemctl enable --now tailscaled
+# sudo tailscale up

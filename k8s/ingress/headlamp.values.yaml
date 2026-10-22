@@ -1,0 +1,5 @@
+# Headlamp Helm values, NOT a Kubernetes Ingress or kubectl apply manifest.
+# Loaded by k8s/services/headlamp.sh install.
+# Ingress preserves /headlamp; Headlamp serves its UI/API at this base path.
+config:
+  baseURL: /headlamp

@@ -53,6 +53,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y openvpn easy-rsa
 EASYRSA_DIR="/etc/openvpn/easy-rsa"
 SERVER_DIR="/etc/openvpn/server"
 CLIENT_OUT="/root/openvpn-clients"
+install -d -m 755 /var/lib/openvpn
 install -d -m 700 "$EASYRSA_DIR" "$SERVER_DIR" "$CLIENT_OUT"
 
 # Keep the CA and its private key on the server. For production, prefer an
@@ -119,8 +120,8 @@ sudo chmod 600 "$SERVER_DIR/server.conf"
 
 # Give each worker a stable VPN address for easier Kubernetes node configuration.
 sudo install -d -m 700 "$SERVER_DIR/ccd"
-printf '%s\\n' 'ifconfig-push 10.8.0.2 255.255.255.0' > "$SERVER_DIR/ccd/worker1"
-printf '%s\\n' 'ifconfig-push 10.8.0.3 255.255.255.0' > "$SERVER_DIR/ccd/worker2"
+printf '%s\n' 'ifconfig-push 10.8.0.2 255.255.255.0' > "$SERVER_DIR/ccd/worker1"
+printf '%s\n' 'ifconfig-push 10.8.0.3 255.255.255.0' > "$SERVER_DIR/ccd/worker2"
 sudo chmod 600 "$SERVER_DIR/ccd/worker1" "$SERVER_DIR/ccd/worker2"
 
 # Client configs refer to their own files under /etc/openvpn/client/<name>/.

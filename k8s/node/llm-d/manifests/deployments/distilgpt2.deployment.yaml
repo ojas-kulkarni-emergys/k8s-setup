@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: distilgpt2-backend
+  namespace: llm-d-deployments
+  labels:
+    app.kubernetes.io/name: distilgpt2-backend
+    inference.networking.k8s.io/pool: llm-router
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: distilgpt2-backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: distilgpt2-backend
+        inference.networking.k8s.io/pool: llm-router
+    spec:
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          args:
+            - --model=distilgpt2
+            - --port=8000
+            - --gpu-utilization=0.9
+          ports:
+            - containerPort: 8000
+          volumeMounts:
+            - mountPath: /root/.cache/huggingface
+              name: hf-cache
+              readOnly: true
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "2Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+      volumes:
+        - name: hf-cache
+          hostPath:
+            path: /home/ojas/.cache/huggingface
+            type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: distilgpt2-service
+  namespace: llm-d-deployments
+  labels:
+    inference.networking.k8s.io/pool: llm-router
+spec:
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+  selector:
+    app.kubernetes.io/name: distilgpt2-backend

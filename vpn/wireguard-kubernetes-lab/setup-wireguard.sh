@@ -43,7 +43,7 @@ sudo install -d -m 700 /etc/wireguard
 if [[ -e /etc/wireguard/private.key || -e /etc/wireguard/public.key ]]; then
   echo "Existing WireGuard key file found; leaving keys unchanged."
 else
-  sudo umask 077
+  umask 077
   sudo wg genkey | tee /etc/wireguard/private.key | wg pubkey > /etc/wireguard/public.key
   sudo chmod 600 /etc/wireguard/private.key /etc/wireguard/public.key
 fi

@@ -1,0 +1,110 @@
+# Standard Kubernetes Ingress; no Tailscale operator required.
+# Confirm `sudo k8s kubectl get ingressclass` lists cilium before applying.
+# Apply only after installing the backend Services in the listed namespaces.
+# Headlamp uses /headlamp without a hostname; other apps retain hostname routes.
+# Headlamp baseURL is set in headlamp.values.yaml (Helm), not Ingress.spec.
+# Map other *.k8s.test names to the controller address if using those routes.
+# HTTP examples. For HTTPS, supply TLS Secrets in each namespace and add spec.tls.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: headlamp
+  namespace: kube-system
+  annotations:
+    ingress.cilium.io/loadbalancer-mode: shared
+spec:
+  ingressClassName: cilium
+  rules:
+    - http:
+        paths:
+          - path: /headlamp
+            pathType: Prefix
+            backend:
+              service:
+                name: headlamp
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: llm-router
+  namespace: llm-d-deployments
+  annotations:
+    ingress.cilium.io/loadbalancer-mode: shared
+spec:
+  ingressClassName: cilium
+  rules:
+  - host: llm-router.k8s.test
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: llm-router-epp
+            port:
+              number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana
+  namespace: llm-d-deployments
+  annotations:
+    ingress.cilium.io/loadbalancer-mode: shared
+spec:
+  ingressClassName: cilium
+  rules:
+  - host: grafana.k8s.test
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana
+            port:
+              number: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: prometheus
+  namespace: llm-d-deployments
+  annotations:
+    ingress.cilium.io/loadbalancer-mode: shared
+spec:
+  ingressClassName: cilium
+  rules:
+  - host: prometheus.k8s.test
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: prometheus
+            port:
+              number: 9090
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: registry
+  namespace: docker-registry
+  annotations:
+    ingress.cilium.io/loadbalancer-mode: shared
+spec:
+  ingressClassName: cilium
+  rules:
+  - host: registry.k8s.test
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: registry
+            port:
+              number: 5000

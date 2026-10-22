@@ -1,0 +1,60 @@
+role: control
+node_name: RACIT026
+vpn: tailscale
+paths:
+  vpn_dir: ./vpn
+  tailscale_script: ./vpn/tailscale-kubernetes-lab/setup-tailscale.sh
+  openvpn_script: ./vpn/openvpn-kubernetes-lab/setup-openvpn.sh
+  wireguard_config: ./vpn/wireguard-kubernetes-lab/wg0-control.conf
+  openvpn_client_bundle: ./vpn/openvpn-kubernetes-lab/worker1.tar.gz
+openvpn:
+  endpoint: 49.248.214.194
+  client_name: worker1
+kubernetes:
+  channel: 1.35-classic/stable
+  node_address: 100.78.103.3
+  join_token: ''
+  addons:
+  - local-storage
+  - ingress
+  - load-balancer
+  - gateway
+llm_d:
+  namespace: llm-d-deployments
+  kubeconfig: /home/ojas/.kube/config
+  repo_root: ./llm-d
+  chart: oci://ghcr.io/llm-d/charts/llm-d-router-standalone
+  chart_version: v0
+  base_values: guides/recipes/router/base.values.yaml
+  optimized_values: guides/optimized-baseline/router/optimized-baseline.values.yaml
+  manifest_path: k8s/node/llm-d/manifests/router/llm-d-router.yaml
+  generated_manifest_path: k8s/node/llm-d/manifests/router/llm-d-router.rendered.yaml
+  distilgpt2_manifest_path: k8s/node/llm-d/manifests/deployments/distilgpt2.deployment.yaml
+  hf_cache_path: /home/ojas/.cache/huggingface
+  hf_download_cache_dir: /home/ojas/.cache/huggingface/hub
+  generated_deployments_dir: k8s/node/llm-d/manifests/deployments
+  model_template_path: k8s/node/llm-d/manifests/templates/model-deployment.template.yaml
+  env:
+    HF_TOKEN: null
+  manifests_dir: k8s/node/llm-d/manifests
+  release_name: llm-router
+image_recovery:
+  enabled: false
+headlamp:
+  namespace: kube-system
+  release: headlamp
+  chart: headlamp/headlamp
+  repository: https://kubernetes-sigs.github.io/headlamp/
+  local_port: 8080
+  service_port: 80
+  timeout: 5m
+  login_service_account: headlamp-viewer
+  login_cluster_role: view
+registry:
+  url: http://127.0.0.1:5000
+  namespace: docker-registry
+  deployment: docker-registry
+  service: registry
+  local_port: 5000
+  service_port: 5000
+  config_path: /etc/distribution/config.yml

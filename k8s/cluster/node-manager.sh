@@ -2,27 +2,28 @@
 set -Eeuo pipefail
 umask 077
 
-# Canonical Kubernetes setup wizard and node lifecycle manager.
+# Configuration and lifecycle submenu module.
 #
 # Interactive:
-#   sudo ./install.sh [path/to/config.yml]
+#   sudo bash k8s/cluster/node-manager.sh [path/to/config.yaml]
 #
 # Direct commands:
-#   sudo ./install.sh --start-cluster [path/to/config.yml]
-#   sudo ./install.sh --stop-cluster [path/to/config.yml]
-#   sudo ./install.sh --cluster-status [path/to/config.yml]
-#   sudo ./install.sh --uninstall [path/to/config.yml]
+#   sudo bash k8s/cluster/node-manager.sh --start-cluster [path/to/config.yaml]
+#   sudo bash k8s/cluster/node-manager.sh --stop-cluster [path/to/config.yaml]
+#   sudo bash k8s/cluster/node-manager.sh --cluster-status [path/to/config.yaml]
+#   sudo bash k8s/cluster/node-manager.sh --uninstall [path/to/config.yaml]
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG="$SCRIPT_DIR/config.yml"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+CONFIG="$SCRIPT_DIR/config.yaml"
 ACTION=""
 
 # Accept an action and an optional config path in either order.
 for arg in "$@"; do
     case "$arg" in
-        --start-cluster|--stop-cluster|--cluster-status|--uninstall)
+        --start-cluster|--stop-cluster|--cluster-status|--uninstall|--worker-token|--configure|--controls|--install-cluster|--install-control|--install-worker|--models)
             ACTION="$arg"
             ;;
+        --*) echo "Unknown option: $arg" >&2; exit 2 ;;
         *)
             CONFIG="$arg"
             ;;
@@ -32,7 +33,7 @@ done
 [[ "$CONFIG" = /* ]] || CONFIG="$PWD/$CONFIG"
 
 if [[ $EUID -ne 0 ]]; then
-    echo "Run with sudo: sudo $0 [config.yml|--start-cluster|--stop-cluster|--cluster-status|--uninstall]" >&2
+    echo "Run with sudo: sudo $0 [config.yaml|--start-cluster|--stop-cluster|--cluster-status|--uninstall]" >&2
     exit 1
 fi
 
@@ -123,6 +124,7 @@ cluster_control() {
 # ------------------------------------------------------------
 
 uninstall_node() {
+    local scope="${1:-all}"
     require_config
 
     local role node_name vpn client_name
@@ -134,19 +136,19 @@ uninstall_node() {
     [[ -n "$client_name" ]] || client_name="${node_name#k8s-}"
 
     if [[ "$role" != "control" && "$role" != "worker" ]]; then
-        echo "ERROR: config.yml role must be 'control' or 'worker'." >&2
+        echo "ERROR: config.yaml role must be 'control' or 'worker'." >&2
         return 2
     fi
 
     if [[ -z "$node_name" ]]; then
-        echo "ERROR: config.yml node_name is required." >&2
+        echo "ERROR: config.yaml node_name is required." >&2
         return 2
     fi
 
     case "$vpn" in
         none|tailscale|wireguard|openvpn) ;;
         *)
-            echo "ERROR: config.yml vpn must be none, tailscale, wireguard, or openvpn." >&2
+            echo "ERROR: config.yaml vpn must be none, tailscale, wireguard, or openvpn." >&2
             return 2
             ;;
     esac
@@ -159,14 +161,15 @@ uninstall_node() {
     echo "Role   : $role"
     echo "Node   : $node_name"
     echo "VPN    : $vpn"
+    echo "Remove : $scope"
     echo
 
-    if [[ "$role" == "control" ]]; then
+    if [[ "$role" == "control" && "$scope" != vpn ]]; then
         echo "This is configured as the CONTROL PLANE."
         echo "Retire or uninstall worker nodes separately."
         echo "Removing the Kubernetes snap may destroy local cluster state."
     else
-        echo "This removes Kubernetes from this WORKER only."
+        echo "Only the selected components on this node will be removed."
     fi
 
     echo
@@ -191,76 +194,16 @@ uninstall_node() {
     echo
     echo "== Removing Canonical Kubernetes =="
 
-    if command -v snap >/dev/null 2>&1 && snap list k8s >/dev/null 2>&1; then
+    if [[ "$scope" != vpn ]] && command -v snap >/dev/null 2>&1 && snap list k8s >/dev/null 2>&1; then
         snap stop k8s || true
         snap remove --purge k8s
     else
         echo "Canonical Kubernetes snap not found; skipping."
     fi
 
-    echo
-    echo "== Removing configured VPN: $vpn =="
-
-    case "$vpn" in
-        none)
-            echo "No VPN selected; skipping VPN cleanup."
-            ;;
-
-        tailscale)
-            if command -v tailscale >/dev/null 2>&1; then
-                tailscale logout || true
-            fi
-
-            systemctl disable --now tailscaled 2>/dev/null || true
-
-            if command -v apt-get >/dev/null 2>&1; then
-                DEBIAN_FRONTEND=noninteractive apt-get purge -y tailscale || true
-            fi
-
-            echo "Tailscale state was retained unless removed by its package scripts."
-            ;;
-
-        wireguard)
-            systemctl disable --now wg-quick@wg0 2>/dev/null || true
-
-            # Remove only the configured interface file used by this setup.
-            rm -f /etc/wireguard/wg0.conf
-            rmdir /etc/wireguard 2>/dev/null || true
-
-            if command -v apt-get >/dev/null 2>&1; then
-                DEBIAN_FRONTEND=noninteractive apt-get purge -y wireguard wireguard-tools || true
-            fi
-
-            echo "Other WireGuard configuration files were not intentionally removed."
-            ;;
-
-        openvpn)
-            if [[ "$role" == "control" ]]; then
-                systemctl disable --now openvpn-server@server 2>/dev/null || true
-
-                # These are common paths; confirm they match your setup scripts.
-                rm -rf /etc/openvpn/server /etc/openvpn/easy-rsa /root/openvpn-clients
-
-                if command -v apt-get >/dev/null 2>&1; then
-                    DEBIAN_FRONTEND=noninteractive apt-get purge -y openvpn easy-rsa || true
-                fi
-
-                echo "Review firewall rules and remove any lab-specific OpenVPN rules manually."
-            else
-                if [[ "$client_name" =~ ^[A-Za-z0-9_-]+$ ]]; then
-                    systemctl disable --now "openvpn-client@${client_name}" 2>/dev/null || true
-                    rm -f "/etc/openvpn/client/${client_name}.conf"
-                    rm -rf "/etc/openvpn/client/${client_name}"
-                else
-                    echo "WARNING: unsafe client name; skipped client-file cleanup."
-                fi
-
-                if command -v apt-get >/dev/null 2>&1; then
-                    DEBIAN_FRONTEND=noninteractive apt-get purge -y openvpn || true
-                fi
-            fi
-            ;;
-    esac
+    if [[ "$scope" != cluster ]]; then
+        bash "$SCRIPT_DIR/k8s/cluster/vpn_manager.sh" uninstall "$CONFIG"
+    fi
 
     echo
     echo "Uninstall actions completed for $node_name ($role)."
@@ -315,7 +258,8 @@ PY
     case "${choice:-}" in
         1) role=control ;;
         2) role=worker ;;
-        *) role="${current_role:-control}" ;;
+        "") role="${current_role:-control}" ;;
+        *) echo "Invalid role." >&2; return 2 ;;
     esac
 
     local suggested_name name_default node_name
@@ -329,6 +273,7 @@ PY
 
     read -r -p "Node name [$name_default]: " node_name
     node_name="${node_name:-$name_default}"
+    [[ "$node_name" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$ ]] || { echo "Invalid node name." >&2; return 2; }
 
     printf '\nVPN method:\n'
     printf '  1) Tailscale (automatic VPN IP)\n'
@@ -479,66 +424,86 @@ PY
     printf '  Role: %s\n  Node: %s\n  VPN: %s\n  Channel: %s\n  Config: %s\n' \
         "$role" "$node_name" "$vpn" "$channel" "$CONFIG"
 
-    local confirm
-    read -r -p "Start VPN setup and Kubernetes installation now? [y/N]: " confirm
-
-    [[ "$confirm" =~ ^[Yy]$ ]] || {
-        echo "Saved configuration to $CONFIG. No installation started."
-        return 0
-    }
-
-    exec "$SCRIPT_DIR/setup-cluster.sh" "$CONFIG"
+    echo "Configuration saved to $CONFIG. Install VPN and cluster separately from the main menu."
 }
 
 # ------------------------------------------------------------
 # Main menu
 # ------------------------------------------------------------
 
-main_menu() {
+worker_token() {
+    local name
+    read -r -p 'Worker node name: ' name || return 1
+    [[ "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]] || { echo 'Invalid node name.' >&2; return 2; }
+    k8s get-join-token "$name" --worker
+}
+configure_menu() {
+    local choice
     while true; do
-        echo
-        echo "================================================"
-        echo "   Canonical Kubernetes Node Management"
-        echo "================================================"
-        echo "Config: $CONFIG"
-        echo "  1) Install / configure this node"
-        echo "  2) Start Kubernetes cluster services"
-        echo "  3) Stop Kubernetes cluster services"
-        echo "  4) Show Kubernetes service status"
-        echo "  5) Uninstall Kubernetes + configured VPN on this node"
-        echo "  6) Exit"
-
-        local menu_choice
-        read -r -p "Select [1-6]: " menu_choice
-
-        case "${menu_choice:-}" in
-            1) install_wizard || true ;;
-            2) cluster_control --start-cluster || true ;;
-            3) cluster_control --stop-cluster || true ;;
-            4) cluster_control --cluster-status || true ;;
-            5) uninstall_node || true ;;
-            6) return 0 ;;
-            *) echo "Invalid choice. Select 1-6." ;;
+        set +e
+        printf '\n1) Configure node\n2) Generate worker join token (on control plane)\n0) Back\n'
+        read -r -p 'Select: ' choice || return 0
+        case "$choice" in
+            1) ( set -e; install_wizard ) ;; 2) worker_token ;; 0) return ;; *) echo 'Invalid choice.' ;;
         esac
     done
 }
-
-# ------------------------------------------------------------
-# Entry point
-# ------------------------------------------------------------
-
+cluster_menu() {
+    local choice
+    while true; do
+        set +e
+        printf '\n1) Start cluster\n2) Stop cluster\n3) Show cluster\n4) Cluster / VPN logs\n0) Back\n'
+        read -r -p 'Select: ' choice || return 0
+        case "$choice" in
+            1) cluster_control --start-cluster ;;
+            2) cluster_control --stop-cluster ;;
+            3) cluster_control --cluster-status ;;
+            4) journalctl -u 'snap.k8s.*' -u tailscaled -u 'wg-quick@*' -u 'openvpn-*' -n 100 --no-pager ;;
+            0) return ;; *) echo 'Invalid choice.' ;;
+        esac
+    done
+}
+uninstall_menu() {
+    local choice
+    printf '\n1) Uninstall cluster only\n2) Uninstall configured VPN only\n3) Uninstall both\n0) Back\n'
+    read -r -p 'Select: ' choice || return 0
+    case "$choice" in
+        1) ( set -e; uninstall_node cluster ) ;; 2) ( set -e; uninstall_node vpn ) ;; 3) ( set -e; uninstall_node all ) ;; 0) return ;; *) echo 'Invalid choice.' ;;
+    esac
+}
+install_cluster() {
+    require_config
+    case "$(cfg role)" in
+        control) bash "$SCRIPT_DIR/k8s/cluster/setup-control-plane.sh" "$CONFIG" ;;
+        worker) bash "$SCRIPT_DIR/k8s/cluster/setup-worker.sh" "$CONFIG" ;;
+        *) echo 'Set role: control or role: worker in config.yaml.' >&2; return 2 ;;
+    esac
+}
+node_menu() {
+    local choice
+    while true; do
+        printf '\n=== Node manager ===\n1) Configure node\n2) Generate worker token\n3) Install configured node role\n4) Install control plane\n5) Install worker\n6) Cluster controls / logs\n7) Models / router\n8) Uninstall\n0) Back\n'
+        read -r -p 'Select: ' choice || return 0
+        case "$choice" in
+            1) action=--configure ;; 2) action=--worker-token ;;
+            3) action=--install-cluster ;; 4) action=--install-control ;;
+            5) action=--install-worker ;; 6) action=--controls ;;
+            7) action=--models ;; 8) action=--uninstall ;;
+            0) return 0 ;; *) continue ;;
+        esac
+        bash "${BASH_SOURCE[0]}" "$action" "$CONFIG" || echo 'Node action failed.' >&2
+    done
+}
 case "$ACTION" in
-    --start-cluster|--stop-cluster|--cluster-status)
-        cluster_control "$ACTION"
-        ;;
-    --uninstall)
-        uninstall_node
-        ;;
-    "")
-        main_menu
-        ;;
-    *)
-        echo "Unsupported action: $ACTION" >&2
-        exit 2
-        ;;
+  "") node_menu ;;
+  --configure) configure_menu ;;
+  --controls) cluster_menu ;;
+  --worker-token) worker_token ;;
+  --install-cluster) install_cluster ;;
+  --install-control) bash "$SCRIPT_DIR/k8s/cluster/setup-control-plane.sh" "$CONFIG" ;;
+  --install-worker) bash "$SCRIPT_DIR/k8s/cluster/setup-worker.sh" "$CONFIG" ;;
+  --models) bash "$SCRIPT_DIR/k8s/node/llm-d.setup.sh" "$CONFIG" ;;
+  --uninstall) uninstall_menu ;;
+  --start-cluster|--stop-cluster|--cluster-status) cluster_control "$ACTION" ;;
+  *) echo 'Unknown node-manager action.' >&2; exit 2 ;;
 esac

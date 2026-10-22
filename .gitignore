@@ -7,9 +7,9 @@ __pycache__/
 *.so
 
 # Custom additions for k8s-setup
-llm-d/
+/llm-d/
 .llm-d-port-forwards/
-llm-d-router.wizard.sh
+/distribution/
 
 # Distribution / packaging
 .Python

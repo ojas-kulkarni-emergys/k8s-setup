@@ -1,0 +1,17 @@
+# OPTIONAL, separate from ingress.yaml. Helm values, not a kubectl manifest.
+# Existing node-level Tailscale installations do not need this operator.
+# No application ingress is exposed by this file.
+# Precreate operator-oauth in namespace tailscale, with client_id/client_secret.
+# Keep credential values out of this file and version control.
+oauth:
+  clientId: ""
+  clientSecret: ""
+operatorConfig:
+  hostname: tailscale-operator
+  defaultTags:
+    - tag:k8s-operator
+proxyConfig:
+  defaultTags: tag:k8s
+ingressClass:
+  name: tailscale
+  enabled: true

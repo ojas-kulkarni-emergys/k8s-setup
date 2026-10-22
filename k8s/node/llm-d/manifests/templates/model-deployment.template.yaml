@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: __DEPLOYMENT_NAME__
+  namespace: __NAMESPACE__
+  labels:
+    app.kubernetes.io/name: __DEPLOYMENT_NAME__
+    inference.networking.k8s.io/pool: __RELEASE_NAME__
+spec:
+  replicas: __REPLICAS__
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: __DEPLOYMENT_NAME__
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: __DEPLOYMENT_NAME__
+        inference.networking.k8s.io/pool: __RELEASE_NAME__
+    spec:
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          args: __VLLM_ARGS__
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: HF_HOME
+              value: /root/.cache/huggingface
+            - name: HF_HUB_CACHE
+              value: /root/.cache/huggingface/hub
+            - name: HF_HUB_OFFLINE
+              value: "1"
+          volumeMounts:
+            - name: hf-cache
+              mountPath: /root/.cache/huggingface
+              readOnly: true
+            - name: dshm
+              mountPath: /dev/shm
+          resources:
+            requests:
+              cpu: __CPU_REQUEST__
+              memory: __MEMORY_REQUEST__
+            limits:
+              cpu: __CPU_LIMIT__
+              memory: __MEMORY_LIMIT__
+      volumes:
+        - name: hf-cache
+          hostPath:
+            path: __CACHE_PATH__
+            type: Directory
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: __SERVICE_NAME__
+  namespace: __NAMESPACE__
+  labels:
+    inference.networking.k8s.io/pool: __RELEASE_NAME__
+spec:
+  selector:
+    app.kubernetes.io/name: __DEPLOYMENT_NAME__
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
