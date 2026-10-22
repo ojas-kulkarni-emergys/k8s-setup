@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import yaml
 
@@ -12,6 +12,8 @@ class Settings:
     snap_channel: str = "1.35-classic/stable"
     vpn_pool: str = "10.210.0.0/16"
     reserved_cidrs: tuple[str, ...] = ()
+    remote_execution_enabled: bool = False
+    ssh_targets: dict = field(default_factory=dict)
 
     @classmethod
     def load(cls, path=None):
@@ -23,4 +25,6 @@ class Settings:
                    command_prefix=list(data['command_prefix']),
                    allow_token_generation=data.get('allow_token_generation', False) is True,
                    snap_channel=data['snap_channel'], vpn_pool=data['vpn_pool'],
-                   reserved_cidrs=tuple(data.get('reserved_cidrs', [])))
+                   reserved_cidrs=tuple(data.get('reserved_cidrs', [])),
+                   remote_execution_enabled=data.get('remote_execution_enabled', False) is True,
+                   ssh_targets=data.get('ssh_targets', {}))

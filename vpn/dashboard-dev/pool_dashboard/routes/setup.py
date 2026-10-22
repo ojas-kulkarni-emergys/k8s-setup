@@ -1,6 +1,23 @@
 from fastapi import APIRouter, Request
 from ..models import JoinRequest, CreateCluster
+from pydantic import BaseModel, Field
+from ..command_preview import CommandPreview
 router = APIRouter(prefix='/api/v1/setup', tags=['setup-wizard'])
+
+
+class PreviewRequest(BaseModel):
+    action: str = Field(max_length=100)
+    inputs: dict[str, str] = Field(default_factory=dict, max_length=100)
+
+
+@router.get('/command-routes')
+def command_routes(request: Request):
+    return {'routes': CommandPreview(request.app.state.settings).routes()}
+
+
+@router.post('/command-preview')
+def command_preview(body: PreviewRequest, request: Request):
+    return CommandPreview(request.app.state.settings, body.inputs).preview(body.action)
 
 
 @router.post('/join')

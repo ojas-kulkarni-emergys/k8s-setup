@@ -8,7 +8,8 @@ from fastapi.staticfiles import StaticFiles
 from .settings import Settings
 from .security import require_admin
 from .services import ClusterService, NetworkStore
-from .routes import cluster, join_tokens, setup, vpn
+from .routes import cluster, join_tokens, setup, vpn, remote
+from .remote import RemoteWorkers
 
 STATIC = Path(__file__).parent / 'static'
 
@@ -32,7 +33,8 @@ def create_app(settings=None, runner=None, token=None):
     application.state.access_token = token
     application.state.cluster = ClusterService(settings, **({'runner': runner} if runner else {}))
     application.state.networks = NetworkStore(settings)
-    for router in (cluster.router, join_tokens.router, setup.router, vpn.router):
+    application.state.remote = RemoteWorkers(settings, application.state.cluster)
+    for router in (cluster.router, join_tokens.router, setup.router, vpn.router, remote.router):
         application.include_router(router, dependencies=[Depends(require_admin)])
 
     @application.middleware('http')

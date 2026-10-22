@@ -1,7 +1,7 @@
 'use strict';
 let accessToken = '', plan = null;
 const $ = id => document.getElementById(id);
-const titles = {overview:'Cluster overview', wizard:'Node setup wizard', vpn:'VPN workbench', modules:'Setup modules'};
+const titles = {overview:'Cluster overview', wizard:'Node setup wizard', vpn:'VPN workbench', modules:'Setup modules', remote:'Remote workers', commands:'Commands only'};
 const message = text => { $('message').textContent = text || ''; };
 async function api(path, method='GET', body) {
   const response = await fetch('/api/v1' + path, {method, cache:'no-store', headers: {
@@ -51,6 +51,8 @@ function view(name) {
   document.querySelectorAll('.view').forEach(v=>v.hidden=v.id!==name);
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===name));
   $('page-title').textContent=titles[name]; message('');
+  if(accessToken && name==='commands') refreshCommandRoutes();
+  if(accessToken && name==='remote') refreshRemote();
   if(accessToken && name==='vpn') refreshNetworks();
   if(accessToken && name==='modules') refreshModules();
 }
@@ -78,3 +80,116 @@ $('member-form').addEventListener('submit',e=>{e.preventDefault();member(false);
 $('remove-member').onclick=()=>member(true);
 
 $('download-config').onclick=()=>{if(!plan)return;const url=URL.createObjectURL(new Blob([plan.config_yaml],{type:'text/yaml'}));const a=document.createElement('a');a.href=url;a.download=plan.config_filename;a.click();URL.revokeObjectURL(url);message('Node config downloaded. A worker config contains a join token; remove the file after use.');};
+
+let remoteTargets = [], remoteJob = null, remoteTimer = null;
+function selectedRemoteTarget() {
+  const target = remoteTargets.find(t => t.name === $('remote-target').value);
+  $('remote-address').value = target?.host || '';
+}
+async function refreshRemote() {
+  try {
+    const data = await api('/remote/targets'); remoteTargets = data.targets;
+    $('remote-target').replaceChildren();
+    for (const t of remoteTargets) {
+      const option = document.createElement('option'); option.value=t.name;
+      option.textContent=t.name + ' / ' + t.host; $('remote-target').append(option);
+    }
+    selectedRemoteTarget();
+    $('remote-status').textContent = data.enabled ? 'SSH execution enabled for configured targets only.' : 'Disabled. Configure remote_execution_enabled and ssh_targets in dashboard-dev/config.yaml, then restart the dashboard.';
+    $('remote-submit').disabled = !data.enabled || !remoteTargets.length || !!remoteJob;
+    $('remote-check').disabled = !data.enabled || !remoteTargets.length;
+  } catch(e) { message(e.message); }
+}
+$('remote-target').onchange=selectedRemoteTarget;
+$('remote-check').onclick=async()=>{
+  try { const result=await api('/remote/targets/'+encodeURIComponent($('remote-target').value)+'/check','POST');
+    message('SSH and snap/sudo prerequisites ready: '+result.host);
+  } catch(e) { message(e.message); }
+};
+async function pollRemoteJob() {
+  if (!remoteJob) return;
+  try {
+    const data=await api('/remote/jobs/'+remoteJob);
+    $('remote-job-status').textContent=data.target + ': ' + data.state;
+    $('remote-logs').textContent=data.logs.join('\n\n');
+    if(data.state==='running') { remoteTimer=setTimeout(pollRemoteJob,2000); }
+    else { remoteJob=null; $('remote-submit').disabled=false; refreshNodes(); }
+  } catch(e) {
+    message(e.message+' Polling stopped; a remote job may still be running.');
+    $('remote-job-status').textContent='Status unavailable. Inspect the worker before retrying.';
+    // Keep submit disabled so a lost connection cannot trigger a duplicate job.
+  }
+}
+$('remote-form').addEventListener('submit', async e=>{
+  e.preventDefault(); if(remoteJob)return;
+  $('remote-submit').disabled=true;
+  try {
+    const result=await api('/remote/targets/'+encodeURIComponent($('remote-target').value)+'/join','POST',{
+      node_name:$('remote-node').value,address:$('remote-address').value,token:$('remote-token').value
+    });
+    $('remote-token').value=''; $('remote-confirm').checked=false;
+    remoteJob=result.job_id; $('remote-job-status').textContent='Job '+remoteJob+' started';
+    pollRemoteJob();
+  } catch(e) { message(e.message); $('remote-submit').disabled=false; }
+});
+
+let commandInputs={}, commandPreview=null, commandShown=0;
+async function refreshCommandRoutes() {
+  try {
+    const data=await api('/setup/command-routes');
+    const previous=$('command-route').value;
+    $('command-route').replaceChildren();
+    for(const route of data.routes) {
+      const option=document.createElement('option');option.value=route.action;
+      option.textContent=route.label+' ('+route.action+')';$('command-route').append(option);
+    }
+    if(data.routes.some(r=>r.action===previous))$('command-route').value=previous;
+  } catch(e) {message(e.message);}
+}
+function clearCommands() {
+  commandInputs={};commandPreview=null;commandShown=0;
+  $('command-entry').textContent='';$('command-trace').textContent='';
+  $('command-steps').replaceChildren();$('command-question').hidden=true;
+  $('command-answer').value='';$('command-next').hidden=true;
+  $('command-status').textContent='';
+}
+function showCommandSteps() {
+  $('command-steps').replaceChildren();
+  for(const [i,step] of commandPreview.steps.slice(0,commandShown).entries()) {
+    const article=document.createElement('article'),title=document.createElement('h3'),source=document.createElement('small'),pre=document.createElement('pre'),button=document.createElement('button');
+    title.textContent='Step '+(i+1);source.textContent=step.source+':'+step.line;
+    pre.textContent=step.command;button.type='button';button.className='secondary';button.textContent='Copy command';
+    button.onclick=async()=>{try{await navigator.clipboard.writeText(step.command);message('Command copied.');}catch(e){message('Select and copy the command text manually.');}};
+    article.append(title,source,pre,button);$('command-steps').append(article);
+  }
+  $('command-next').hidden=commandShown>=commandPreview.steps.length;
+  $('command-question').hidden=commandShown<commandPreview.steps.length || !commandPreview.question;
+}
+async function loadCommands(reset=false) {
+  if(reset)clearCommands();
+  try {
+    commandPreview=await api('/setup/command-preview','POST',{action:$('command-route').value,inputs:commandInputs});
+    $('command-entry').textContent=commandPreview.entry_command;
+    $('command-trace').textContent=commandPreview.trace.map(t=>t.source+':'+t.line+'\n'+t.call+(t.note?'\n'+t.note:'')).join('\n\n');
+    $('command-status').textContent=commandPreview.limitation?'Preview stopped: '+commandPreview.limitation : commandPreview.complete?'Route resolved. Reveal commands below in order.':'More selection or runtime input is needed.';
+    const q=commandPreview.question;
+    if(q) {
+      $('command-question-label').textContent=q.label;
+      $('command-choice').replaceChildren();
+      if(q.choices) for(const value of q.choices) {const option=document.createElement('option');option.value=value;option.textContent=value;$('command-choice').append(option);}
+      $('command-choice').hidden=!q.choices;$('command-answer').hidden=!!q.choices;
+      $('command-answer').type=q.secret?'password':'text';$('command-answer').value='';
+    }
+    if(commandShown<commandPreview.steps.length)commandShown++;
+    showCommandSteps();
+  } catch(e) {message(e.message);}
+}
+$('command-load').onclick=()=>loadCommands(true);
+$('command-reset').onclick=clearCommands;
+$('command-route').onchange=clearCommands;
+$('command-next').onclick=()=>{commandShown++;showCommandSteps();};
+$('command-question').addEventListener('submit',e=>{
+  e.preventDefault();const q=commandPreview?.question;if(!q)return;
+  commandInputs[q.key]=q.choices?$('command-choice').value:$('command-answer').value;
+  $('command-answer').value='';loadCommands();
+});

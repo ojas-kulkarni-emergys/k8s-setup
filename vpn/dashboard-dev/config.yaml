@@ -2,6 +2,17 @@
 state_dir: .state
 command_prefix: [sudo, -n, k8s]
 allow_token_generation: false
+# SSH transport works over WireGuard, Tailscale, or a trusted LAN.
+remote_execution_enabled: false
+ssh_targets: {}
+# Add only reviewed workers; use their actual WireGuard addresses and SSH user.
+# ssh_targets:
+#   office-worker-01:
+#     host: 10.210.0.2
+#     user: ojas
+#     port: 22
+#     identity_file: /home/ojas/.ssh/inference-workers
+#     known_hosts_file: /home/ojas/.ssh/known_hosts
 # Tokens are generated ON the control plane; joining executes ON the worker.
 snap_channel: 1.35-classic/stable
 scripts_root: ../..
