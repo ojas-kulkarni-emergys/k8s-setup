@@ -1,0 +1,10 @@
+# Isolated prototype. Existing main.sh/config.yaml/VPN files are not modified.
+state_dir: .state
+command_prefix: [sudo, -n, k8s]
+allow_token_generation: false
+# Tokens are generated ON the control plane; joining executes ON the worker.
+snap_channel: 1.35-classic/stable
+scripts_root: ../..
+vpn_pool: 10.210.0.0/16
+# Validate these against real pod/service/LAN networks before implementing VPN.
+reserved_cidrs: [10.1.0.0/16, 10.152.183.0/24, 100.64.0.0/10]

@@ -1,0 +1,26 @@
+from dataclasses import dataclass
+from pathlib import Path
+import yaml
+
+
+@dataclass
+class Settings:
+    state_dir: Path
+    scripts_root: Path
+    command_prefix: list[str]
+    allow_token_generation: bool = False
+    snap_channel: str = "1.35-classic/stable"
+    vpn_pool: str = "10.210.0.0/16"
+    reserved_cidrs: tuple[str, ...] = ()
+
+    @classmethod
+    def load(cls, path=None):
+        path = Path(path or Path(__file__).resolve().parents[1] / 'config.yaml').resolve()
+        with path.open() as stream:
+            data = yaml.safe_load(stream)
+        return cls(state_dir=(path.parent / data['state_dir']).resolve(),
+                   scripts_root=(path.parent / data['scripts_root']).resolve(),
+                   command_prefix=list(data['command_prefix']),
+                   allow_token_generation=data.get('allow_token_generation', False) is True,
+                   snap_channel=data['snap_channel'], vpn_pool=data['vpn_pool'],
+                   reserved_cidrs=tuple(data.get('reserved_cidrs', [])))

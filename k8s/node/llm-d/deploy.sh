@@ -59,7 +59,24 @@ case "${choice:-}" in
     read -r -p "CPU limit [$CPU_LIM]: " v; CPU_LIM="${v:-$CPU_LIM}"
     read -r -p "Memory request [$MEM_REQ]: " v; MEM_REQ="${v:-$MEM_REQ}"
     read -r -p "Memory limit [$MEM_LIM]: " v; MEM_LIM="${v:-$MEM_LIM}"
-    read -r -p "Hugging Face cache path [$HF_CACHE]: " v; HF_CACHE="$(resolve_path "${v:-$HF_CACHE}" "$CONFIG_DIR")"
+    read -r -p "Model cache storage: hostPath or nfs [$MODEL_CACHE_STORAGE]: " v; MODEL_CACHE_STORAGE="${v:-$MODEL_CACHE_STORAGE}"
+    case "$MODEL_CACHE_STORAGE" in
+      hostPath)
+        read -r -p "Hugging Face cache path [$HF_CACHE]: " v
+        HF_CACHE="$(resolve_path "${v:-$HF_CACHE}" "$CONFIG_DIR")"
+        HF_DOWNLOAD_CACHE="$HF_CACHE/hub"
+        ;;
+      nfs)
+        read -r -p "NFS server [$MODEL_CACHE_NFS_SERVER]: " v; MODEL_CACHE_NFS_SERVER="${v:-$MODEL_CACHE_NFS_SERVER}"
+        read -r -p "NFS exported HF cache root [$MODEL_CACHE_NFS_PATH]: " v; MODEL_CACHE_NFS_PATH="${v:-$MODEL_CACHE_NFS_PATH}"
+        [[ -n "$MODEL_CACHE_NFS_SERVER" && "$MODEL_CACHE_NFS_PATH" == /* ]] || { echo 'Set an NFS server and absolute export path.' >&2; exit 2; }
+        echo "NFS: $MODEL_CACHE_NFS_SERVER:$MODEL_CACHE_NFS_PATH (read-only)."
+        echo 'Populate its hub/ directory on the NFS server first. No local download or NFS installation is performed.'
+        echo 'Every eligible node needs nfs-common and export/network access.'
+        ;;
+      *) echo 'Cache storage must be hostPath or nfs.' >&2; exit 2;;
+    esac
+    if [[ "$MODEL_CACHE_STORAGE" == hostPath ]]; then
     echo; echo "==> Checking/download model into cache: $MODEL_ID"
     mkdir -p "$HF_CACHE" "$HF_DOWNLOAD_CACHE"
     # The cache check and download happen on the host before creating the workload.
@@ -85,10 +102,11 @@ else:
     snapshot_download(repo_id=repo, cache_dir=cache, token=token or None)
     print('Download completed and stored in Hugging Face cache.')
 PYDL
+    fi
     need_file "$MODEL_TEMPLATE_PATH"
     mkdir -p "$DEPLOYMENTS_DIR"
     slug="$(model_slug "$MODEL_ID")"
-    export MODEL_ID MODEL_TYPE REPLICAS CPU_REQ CPU_LIM MEM_REQ MEM_LIM NAMESPACE HF_CACHE HF_DOWNLOAD_CACHE MODEL_TEMPLATE_PATH ACCELERATOR VLLM_IMAGE
+    export MODEL_ID MODEL_TYPE REPLICAS CPU_REQ CPU_LIM MEM_REQ MEM_LIM NAMESPACE HF_CACHE HF_DOWNLOAD_CACHE MODEL_TEMPLATE_PATH ACCELERATOR VLLM_IMAGE MODEL_CACHE_STORAGE MODEL_CACHE_NFS_SERVER MODEL_CACHE_NFS_PATH
     DEPLOY_FILE="$(python3 - "$DEPLOYMENTS_DIR" <<'PYFIND'
 import os,sys,glob,yaml
 root=sys.argv[1]; model=os.environ['MODEL_ID']; replicas=int(os.environ['REPLICAS']); image=os.environ['VLLM_IMAGE']; cache=os.environ['HF_CACHE']
@@ -105,7 +123,12 @@ for path in sorted(glob.glob(os.path.join(root,'*.yaml'))+glob.glob(os.path.join
     try: mi=args.index('--model'); model_now=args[mi+1]
     except (ValueError,IndexError): model_now=''
     res=c.get('resources',{}); req=res.get('requests',{}); lim=res.get('limits',{})
-    if model_now==model and int(spec.get('replicas',1))==replicas and c.get('image')==image and req.get('cpu')==want['cpu_req'] and lim.get('cpu')==want['cpu_lim'] and req.get('memory')==want['mem_req'] and lim.get('memory')==want['mem_lim'] and any((v.get('hostPath') or {}).get('path')==cache for v in pod.get('volumes',[])):
+    volumes=pod.get('volumes',[])
+    if os.environ['MODEL_CACHE_STORAGE']=='nfs':
+        cache_matches=any(v.get('nfs')=={'server':os.environ['MODEL_CACHE_NFS_SERVER'],'path':os.environ['MODEL_CACHE_NFS_PATH'],'readOnly':True} for v in volumes)
+    else:
+        cache_matches=any((v.get('hostPath') or {}).get('path')==cache for v in volumes)
+    if model_now==model and int(spec.get('replicas',1))==replicas and c.get('image')==image and req.get('cpu')==want['cpu_req'] and lim.get('cpu')==want['cpu_lim'] and req.get('memory')==want['mem_req'] and lim.get('memory')==want['mem_lim'] and cache_matches:
         print(path); break
 PYFIND
 )"
@@ -137,6 +160,8 @@ replacements={
  '__MODEL_ID__': scalar(model),
  '__VLLM_ARGS__': scalar(args),
  '__CACHE_PATH__': scalar(cache),
+ '__NFS_SERVER__': scalar(os.environ['MODEL_CACHE_NFS_SERVER']),
+ '__NFS_PATH__': scalar(os.environ['MODEL_CACHE_NFS_PATH']),
  '__CPU_REQUEST__': scalar(cpu_req),
  '__CPU_LIMIT__': scalar(cpu_lim),
  '__MEMORY_REQUEST__': scalar(mem_req),
@@ -150,6 +175,10 @@ image=os.environ.get('VLLM_IMAGE','vllm/vllm-openai-cpu:latest-x86_64')
 deployment=next((d for d in docs if d.get('kind')=='Deployment'),None)
 if deployment is None: raise SystemExit('Template must contain a Deployment document.')
 pod_spec=deployment.setdefault('spec',{}).setdefault('template',{}).setdefault('spec',{})
+if os.environ['MODEL_CACHE_STORAGE']=='nfs':
+    volume=next(v for v in pod_spec['volumes'] if v['name']=='hf-cache')
+    volume.pop('hostPath',None)
+    volume['nfs']={'server':os.environ['MODEL_CACHE_NFS_SERVER'], 'path':os.environ['MODEL_CACHE_NFS_PATH'], 'readOnly':True}
 containers=pod_spec.get('containers') or []
 if not containers: raise SystemExit('Deployment template has no containers.')
 # The model-serving container uses the selected runtime image.
@@ -198,8 +227,12 @@ echo; echo 'Deployment summary'; echo "  Mode: $MODE"; echo "  Namespace: $NAMES
 if [[ "$choice" == 3 ]]; then
   echo "  Accelerator: ${ACCELERATOR^^}"
   echo "  Inference image: $VLLM_IMAGE"
-  echo "  Model cache on host: $HF_CACHE"
-  echo '  NOTE: hostPath is node-local; every node that may run replicas must have this same cache path and content.'
+  if [[ "$MODEL_CACHE_STORAGE" == nfs ]]; then
+    echo "  Shared model cache: $MODEL_CACHE_NFS_SERVER:$MODEL_CACHE_NFS_PATH (read-only NFS)"
+  else
+    echo "  Model cache on host: $HF_CACHE"
+    echo '  NOTE: hostPath is node-local; every node that may run replicas must have this same cache path and content.'
+  fi
 fi
 read -r -p 'Apply this manifest? [y/N]: ' confirm
 [[ "$confirm" =~ ^[Yy]$ ]] || { echo 'Cancelled; no Kubernetes resources changed (a model may already have been cached locally).'; exit 0; }

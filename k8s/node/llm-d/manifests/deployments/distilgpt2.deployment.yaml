@@ -42,6 +42,14 @@ spec:
           hostPath:
             path: /home/ojas/.cache/huggingface
             type: Directory
+          # Optional shared cache: remove hostPath above before enabling nfs.
+          # Wizard settings: llm_d.model_cache_storage: nfs,
+          # llm_d.model_cache_nfs_server and llm_d.model_cache_nfs_path.
+          # Static manifests use literal values; config.yaml is not substituted here.
+          # nfs:
+          #   server: 100.78.103.3
+          #   path: /srv/model-cache/huggingface
+          #   readOnly: true
 ---
 apiVersion: v1
 kind: Service

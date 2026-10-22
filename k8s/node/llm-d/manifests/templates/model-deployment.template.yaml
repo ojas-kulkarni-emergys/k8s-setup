@@ -49,6 +49,12 @@ spec:
           hostPath:
             path: __CACHE_PATH__
             type: Directory
+          # NFS alternative: replaces hostPath above when selected in the wizard.
+          # Values are read from llm_d.model_cache_nfs_server/path in config.yaml.
+          # nfs:
+          #   server: __NFS_SERVER__
+          #   path: __NFS_PATH__
+          #   readOnly: true
         - name: dshm
           emptyDir:
             medium: Memory

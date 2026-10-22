@@ -32,6 +32,11 @@ llm_d:
   distilgpt2_manifest_path: k8s/node/llm-d/manifests/deployments/distilgpt2.deployment.yaml
   hf_cache_path: /home/ojas/.cache/huggingface
   hf_download_cache_dir: /home/ojas/.cache/huggingface/hub
+  # hostPath stays active. Set to nfs and uncomment the NFS settings when ready.
+  model_cache_storage: hostPath
+  # model_cache_nfs_server: 100.78.103.3
+  # model_cache_nfs_path: /srv/model-cache/huggingface
+  # NFS clients need nfs-common and export/network access on every eligible node.
   generated_deployments_dir: k8s/node/llm-d/manifests/deployments
   model_template_path: k8s/node/llm-d/manifests/templates/model-deployment.template.yaml
   env:
