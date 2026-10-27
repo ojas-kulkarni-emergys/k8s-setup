@@ -38,6 +38,10 @@ sudo helm upgrade --install distilgpt2 "$HELM_DIR/distilgpt2" \
 sudo helm upgrade --install observability-stack "$HELM_DIR/observability-stack" \
   --namespace observability-stack --create-namespace \
   --set-string grafana.adminPassword='REPLACE_WITH_A_STRONG_PASSWORD'
+
+# 6. Reverse KT Demo 
+sudo helm upgrade --install reverse-kt "$HELM_DIR/reverse-kt" \
+  --namespace inference-demo
 ```
 
 For a safer workflow, store the Grafana password in a protected values file outside version control rather than putting it on the command line.

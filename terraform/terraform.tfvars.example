@@ -1,0 +1,5 @@
+# Copy to terraform.tfvars and edit values. Do not commit the real Grafana password.
+# project_dir = "/home/ojas/hf/k8s-setup"
+# llm_d_repo = "/home/ojas/hf/k8s-setup/llm-d"
+# helm_dir = "/home/ojas/hf/k8s-setup/k8s/node/helm"
+grafana_admin_password = "REPLACE_WITH_A_STRONG_PASSWORD_AT_LEAST_12_CHARS"

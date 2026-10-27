@@ -1,0 +1,149 @@
+{{- /* Reverse-KT API + UI deployment, config, cache PVC and NodePort service. */ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: reverse-kt-config
+  namespace: {{ .Values.namespace }}
+
+# Explicit backends: no silent fallback from vLLM to Hugging Face.
+data:
+  ENABLED_MODELS: HuggingFaceTB/SmolLM2-135M,distilbert/distilgpt2
+  DEFAULT_MODEL: HuggingFaceTB/SmolLM2-135M
+  PRELOAD_MODEL: "false"
+  VLLM_BASE_URL: http://distilgpt2-service.llm-d-deployments.svc.cluster.local:8000
+  VLLM_MODEL: distilgpt2
+  DEFAULT_BACKEND: vLLM
+  HF_HOME: /cache/huggingface
+  HF_HUB_CACHE: /cache/huggingface/hub
+  EVALUATION_RESULTS_DIR: /cache/huggingface/demo-evaluations
+  PROMETHEUS_INTERNAL_URL: http://prometheus.llm-d-deployments.svc.cluster.local:9090
+  GRAFANA_INTERNAL_URL: http://grafana.llm-d-deployments.svc.cluster.local:3000
+  PUBLIC_PROMETHEUS_URL: /prometheus/
+  PUBLIC_GRAFANA_URL: /grafana/
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: reverse-kt-cache
+  namespace: {{ .Values.namespace }}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: {{ .Values.persistence.storageClassName }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reverse-kt
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: 1
+  # In-process comparison job IDs require one API replica; RWO cache is node-local.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: reverse-kt
+  template:
+    metadata:
+      labels:
+        app: reverse-kt
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: inference-api
+          image: "{{ .Values.images.api.repository }}:{{ .Values.images.api.tag }}"
+          imagePullPolicy: Always
+          ports:
+            - name: api
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: reverse-kt-config
+            # Supply optional VLLM_API_KEY/HF_TOKEN using a separately created Secret.
+            - secretRef:
+                name: reverse-kt-credentials
+                optional: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests: {cpu: "500m", memory: 1Gi}
+            limits: {cpu: "4", memory: 4Gi}
+          # volumeMounts:
+          #   - name: model-cache
+          #     mountPath: /cache/huggingface
+          startupProbe:
+            httpGet: {path: /api/v1/health, port: api}
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /api/v1/health, port: api}
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet: {path: /api/v1/health, port: api}
+            periodSeconds: 30
+        - name: ui
+          image: "{{ .Values.images.ui.repository }}:{{ .Values.images.ui.tag }}"
+          imagePullPolicy: Always
+          ports:
+            - name: ui
+              containerPort: 7860
+          envFrom:
+            - configMapRef:
+                name: reverse-kt-config
+          env:
+            - name: INFERENCE_URL
+              value: http://127.0.0.1:8000
+            - name: GRADIO_ROOT_PATH
+              value: /gradio
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests: {cpu: "100m", memory: 256Mi}
+            limits: {cpu: "1", memory: 768Mi}
+          readinessProbe:
+            httpGet: {path: /, port: ui}
+            periodSeconds: 10
+            failureThreshold: 6
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: reverse-kt-cache
+        - name: shared-model-cache
+          nfs:
+            server: {{ .Values.sharedCache.nfsServer }}
+            path: {{ .Values.sharedCache.nfsPath }}
+            readOnly: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: reverse-kt
+  namespace: {{ .Values.namespace }}
+spec:
+  type: NodePort
+  selector:
+    app: reverse-kt
+  ports:
+    - name: ui
+      port: 80
+      targetPort: ui
+      nodePort: {{ .Values.service.uiNodePort }}
+    - name: api
+      port: 8000
+      targetPort: api
+      nodePort: {{ .Values.service.apiNodePort }}

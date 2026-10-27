@@ -11,6 +11,7 @@ helm upgrade --install headlamp "$HELM_DIR/headlamp" --namespace kube-system
 helm upgrade --install docker-registry "$HELM_DIR/docker-registry" --namespace docker-registry --create-namespace
 helm upgrade --install llm-d-router "$HELM_DIR/llm-d-router" --namespace llm-d-deployments --create-namespace
 helm upgrade --install distilgpt2 "$HELM_DIR/distilgpt2" --namespace llm-d-deployments
+sudo helm template reverse-kt "$HELM_DIR/reverse-kt --namespace inference-demo
 if [[ -z "${GRAFANA_ADMIN_PASSWORD:-}" ]]; then
   echo "Set GRAFANA_ADMIN_PASSWORD before installing observability, e.g.:"
   echo "  GRAFANA_ADMIN_PASSWORD='...' ./install-helm.sh --observability-only"

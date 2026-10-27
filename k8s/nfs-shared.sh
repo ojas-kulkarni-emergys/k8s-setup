@@ -8,18 +8,18 @@
 # 1. STORAGE SERVER: install NFS and copy the existing model cache.
 sudo apt-get update
 sudo apt-get install -y nfs-kernel-server rsync
-sudo mkdir -p /home/ojas/hf/k8s-setup/k8s/nfs/srv
+sudo mkdir -p /home/ojas/hf/k8s-setup/nfs/srv
 # Copy hub/ with its blobs, refs, snapshots, and relative symlinks intact.
 # This does not copy the HF login token from the parent cache directory.
-sudo rsync -a /home/ojas/.cache/huggingface/hub /home/ojas/hf/k8s-setup/k8s/nfs/srv/model-cache/huggingface/
-sudo chmod -R a+rX /home/ojas/hf/k8s-setup/k8s/nfs/srv/model-cache/huggingface
+sudo rsync -a /home/ojas/.cache/huggingface/hub /home/ojas/hf/k8s-setup/nfs/srv/model-cache/huggingface/
+sudo chmod -R a+rX /home/ojas/hf/k8s-setup/nfs/srv/model-cache/huggingface
 
 # 2. STORAGE SERVER: export read-only to the control plane and worker.
 # This replaces only this dedicated export file. Preserve additional clients
 # if you have already added them; add their exact addresses to the export line.
 sudo install -d -m 0755 /etc/exports.d
 sudo tee /etc/exports.d/srv.exports >/dev/null <<'EOF'
-/home/ojas/hf/k8s-setup/k8s/nfs/srv 100.78.103.3(ro,sync,no_subtree_check,root_squash) 100.81.95.34(ro,sync,no_subtree_check,root_squash)
+/home/ojas/hf/k8s-setup/nfs/srv 100.78.103.3(ro,sync,no_subtree_check,root_squash) 100.81.95.34(ro,sync,no_subtree_check,root_squash)
 EOF
 sudo exportfs -rav
 sudo systemctl enable --now nfs-kernel-server
@@ -39,11 +39,22 @@ sudo apt-get install -y nfs-common
 
 # 5. WORKER: temporarily mount and check the share.
 sudo mkdir -p /mnt/model-cache-test
-sudo mount -t nfs -o ro,vers=4.1 100.78.103.3:/home/ojas/hf/k8s-setup/k8s/nfs/srv /mnt/model-cache-test
+sudo mount -t nfs -o ro,vers=4.1 100.78.103.3:/home/ojas/hf/k8s-setup/nfs/srv /mnt/model-cache-test
 # ls /mnt/model-cache-test/hub
 # findmnt /mnt/model-cache-test
 # sudo umount /mnt/model-cache-test
 # No permanent host mount or /etc/fstab entry is needed with a Kubernetes nfs volume.
+
+# 5. Update the path
+sudo systemctl stop nfs-kernel-server
+sudo rm -f /etc/exports.d/srv.exports
+sudo tee /etc/exports.d/srv.exports >/dev/null <<'EOF'
+/home/ojas/hf/k8s-setup/nfs/srv 100.78.103.3(ro,sync,no_subtree_check,root_squash) 100.81.95.34(ro,sync,no_subtree_check,root_squash)
+EOF
+sudo exportfs -rav
+sudo systemctl restart nfs-kernel-server
+sudo exportfs -v
+sudo systemctl status nfs-kernel-server --no-pager
 
 # 6. STORAGE SERVER: refresh the shared cache after downloading more models locally.
 # Rerunning rsync copies new/updated files without deleting destination files.

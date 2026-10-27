@@ -1,0 +1,21 @@
+namespace: inference-demo
+images:
+  api:
+    repository: flounder-sphere-dab.ngrok-free.dev/reverse-kt-api
+    tag: dev
+  ui:
+    repository: flounder-sphere-dab.ngrok-free.dev/reverse-kt-ui
+    tag: dev
+persistence:
+  storageClassName: csi-rawfile-default
+  size: 5Gi
+service:
+  uiNodePort: 30506
+  apiNodePort: 30507
+sharedCache:
+  nfsServer: 100.78.103.3
+  nfsPath: /home/ojas/hf/k8s-setup/k8s/nfs/srv
+
+services:
+  prometheusBaseUrl: http://prometheus.observability-stack.svc.cluster.local:9090
+  grafanaBaseUrl: http://grafana.observability-stack.svc.cluster.local:3000

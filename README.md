@@ -1,3 +1,89 @@
+# Terraform: Canonical Kubernetes + Gateway API Inference Extension + Helm
+
+Terraform runs the existing node setup script first, then runs `scripts/deploy-helm.sh`. On a control-plane node, that script:
+
+1. Checks the existing `inferencepools.inference.networking.k8s.io` CRD and lists Gateway API / Inference Extension CRDs.
+2. Prints the first 100 lines of `llm-d/guides/env.sh` and searches `guides`, `hack`, `scripts`, and `Makefile` for GAIE install/version references.
+3. Sources `guides/env.sh`, prints `GAIE_VERSION` and `GAIE_URL`, then applies `https://github.com/kubernetes-sigs/gateway-api-inference-extension/${GAIE_URL}/v1-manifests.yaml`.
+4. Waits for the InferencePool CRD to be established.
+5. Installs/updates the `headlamp`, `docker-registry`, `llm-d-router`, `distilgpt2`, `observability-stack`, and `reverse-kt` Helm releases.
+
+The script detects `role: worker` in `config.yml` and skips the cluster-wide CRD/Helm stage on workers.
+
+## Expected project layout
+
+```text
+k8s-setup/
+├── config.yml
+├── setup-cluster.sh
+├── scripts/deploy-helm.sh
+├── llm-d/                         # existing llm-d checkout, including guides/env.sh
+├── k8s/node/helm/
+│   ├── headlamp/
+│   ├── docker-registry/
+│   ├── llm-d-router/
+│   ├── distilgpt2/
+│   ├── observability-stack/
+│   └── reverse-kt/
+└── terraform/
+    ├── main.tf
+    └── terraform.tfvars
+```
+
+If your llm-d checkout is elsewhere, set `llm_d_repo` in `terraform.tfvars`. The default is `${project_dir}/llm-d`.
+
+## First run
+
+Run from Ubuntu/WSL on the control-plane machine. Review `config.yml` first; the existing setup script can configure VPN, change hostname, install Canonical Kubernetes, and enable addons.
+
+```bash
+cd /home/ojas/hf/k8s-setup
+cp terraform/terraform.tfvars.example terraform/terraform.tfvars
+# Edit terraform/terraform.tfvars and set a strong Grafana password.
+sudo -v
+cd terraform
+terraform init
+terraform fmt -check
+terraform validate
+terraform plan
+terraform apply
+```
+
+The required `grafana_admin_password` variable must be at least 12 characters. Instead of storing it in `terraform.tfvars`, set `TF_VAR_grafana_admin_password` in your shell before running Terraform. Do not commit secrets or the real `terraform.tfvars`.
+
+Terraform's local-exec provisioners use `sudo -n`, so run `sudo -v` first. Helm is installed with Snap if it is missing and Snap is available.
+
+## Manual reruns
+
+Terraform provisioners run on resource creation/replacement. Chart/script changes update the chart hash and trigger the Helm stage, but changing the cluster setup script may also cause the setup resource to be replaced. To explicitly rerun only Helm deployment:
+
+```bash
+terraform apply -replace=terraform_data.helm_deployment
+```
+
+To run the Helm/GAIE stage without Terraform:
+
+```bash
+cd /home/ojas/hf/k8s-setup
+sudo -v
+sudo --preserve-env=GRAFANA_ADMIN_PASSWORD,LLM_D_REPO,HELM_DIR env \
+  GRAFANA_ADMIN_PASSWORD='YOUR_STRONG_PASSWORD' \
+  LLM_D_REPO=/home/ojas/hf/k8s-setup/llm-d \
+  HELM_DIR=/home/ojas/hf/k8s-setup/k8s/node/helm \
+  bash scripts/deploy-helm.sh config.yml
+```
+
+## Important prerequisites and notes
+
+- This runs on the local machine; it does not copy scripts to or remotely configure other nodes.
+- `llm-d/guides/env.sh` must define `GAIE_URL` and `GAIE_VERSION`.
+- `reverse-kt` assumes its API/UI images are already pushed and accessible to Kubernetes. The chart uses NodePorts `30506` (UI) and `30507` (API), a 5Gi PVC, and the configured NFS server/path.
+- The reverse-kt chart now points Prometheus and Grafana at the `observability-stack` namespace and mounts both its PVC cache and read-only shared NFS cache. Ensure the NFS server/path is reachable from the Kubernetes nodes.
+- The docker-registry chart retains its source configuration (including NodePort 30500 and its configured ingress host). Adjust its values if those do not match your environment.
+- Headlamp's source chart grants cluster-admin access. Expose it only in a trusted environment.
+- The router chart requires the GAIE InferencePool CRD; the deployment script applies the GAIE manifests before installing the router chart.
+- `terraform destroy` does not uninstall Kubernetes or the Helm releases.
+
 # Kubernetes setup
 
 `main.sh` is the menu orchestrator. It launches independent Bash modules; each
