@@ -1,0 +1,11 @@
+namespace: docker-registry
+persistence:
+  storageClassName: csi-rawfile-default
+  size: 20Gi
+nodeName: racit026
+registry:
+  nodePort: 30500
+ingress:
+  className: cilium
+  host: flounder-sphere-dab.ngrok-free.dev
+  path: /registry

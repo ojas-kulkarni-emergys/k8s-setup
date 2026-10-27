@@ -1,0 +1,6 @@
+apiVersion: v2
+name: llm-d-router
+description: llm-d EPP, RBAC, Services, ConfigMaps, and InferencePool.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

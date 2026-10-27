@@ -1,0 +1,6 @@
+apiVersion: v2
+name: distilgpt2
+description: vLLM CPU backend and Service selected by the llm-d InferencePool.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

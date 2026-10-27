@@ -1,0 +1,4 @@
+namespace: observability-stack
+grafana:
+  # Change this before installing. Do not commit a real password to version control.
+  adminPassword: "CHANGE_ME_BEFORE_INSTALLING"

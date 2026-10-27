@@ -1,0 +1,6 @@
+apiVersion: v2
+name: observability-stack
+description: Prometheus and Grafana with the existing dashboards and scrape configuration.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

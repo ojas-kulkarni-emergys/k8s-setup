@@ -1,0 +1,3 @@
+# Converted from the existing manifest: llm-d-router.yaml
+# Most original resource values are preserved in templates/manifest.yaml.
+namespace: llm-d-deployments

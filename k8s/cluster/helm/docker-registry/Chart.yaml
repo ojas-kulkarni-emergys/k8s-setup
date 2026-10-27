@@ -1,0 +1,6 @@
+apiVersion: v2
+name: docker-registry
+description: In-cluster Docker Registry with PVC, NodePort, and Ingress.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

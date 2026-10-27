@@ -1,0 +1,10 @@
+namespace: llm-d-deployments
+model:
+  name: distilgpt2
+  replicas: 1
+  hostCachePath: /home/ojas/.cache/huggingface
+  image: vllm/vllm-openai-cpu:latest-x86_64
+  requestCpu: 500m
+  requestMemory: 512Mi
+  limitCpu: "2"
+  limitMemory: 2Gi

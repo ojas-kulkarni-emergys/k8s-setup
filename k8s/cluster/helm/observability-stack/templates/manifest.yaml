@@ -1,0 +1,354 @@
+# Converted from observability-stack-updated.yaml; see values.yaml and README.md for chart notes.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: grafana-admin
+  namespace: observability-stack
+type: Opaque
+stringData:
+  password: {{ .Values.grafana.adminPassword | quote }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: observability-stack
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 5s
+      evaluation_interval: 15s
+
+    scrape_configs:
+      - job_name: prometheus
+        static_configs:
+          - targets: ["localhost:9090"]
+
+      - job_name: vllm
+        metrics_path: /metrics
+        scrape_interval: 5s
+        static_configs:
+          - targets:
+              - distilgpt2-service.llm-d-deployments.svc.cluster.local:8000
+      # llm-d Endpoint Picker (EPP) metrics
+      - job_name: llm-d-epp
+        metrics_path: /metrics
+        scrape_interval: 15s
+        static_configs:
+          - targets:
+              - llm-router-epp.llm-d-gateway.svc.cluster.local:9090
+            labels:
+              namespace: llm-d-gateway
+
+      # Envoy admin Prometheus-format metrics. The companion Service is
+      # created by the setup script because the Envoy port is not in the EPP Service.
+      - job_name: llm-d-envoy
+        metrics_path: /stats/prometheus
+        scrape_interval: 15s
+        static_configs:
+          - targets:
+              - llm-router-envoy-metrics.llm-d-gateway.svc.cluster.local:19001
+            labels:
+              namespace: llm-d-gateway
+
+      # OpenCost inference-cost metrics (enabled by the inferencecost recipe).
+      - job_name: opencost-inference-cost
+        metrics_path: /metrics
+        scrape_interval: 30s
+        static_configs:
+          - targets:
+              - opencost.llm-d-monitoring.svc.cluster.local:9003
+            labels:
+              namespace: llm-d-monitoring
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-provisioning-datasources
+  namespace: observability-stack
+data:
+  datasource.yml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        uid: prometheus
+        url: http://prometheus.observability-stack.svc.cluster.local:9090
+        isDefault: true
+        editable: true
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-provider
+  namespace: observability-stack
+data:
+  dashboards.yml: |
+    apiVersion: 1
+    providers:
+      - name: vLLM
+        orgId: 1
+        folder: LLM Inference
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards
+      - name: llm-d official
+        orgId: 1
+        folder: llm-d
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/llm-d-dashboards
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-vllm-dashboard
+  namespace: observability-stack
+data:
+  vllm-overview.json: |
+    {
+      "uid": "vllm-overview",
+      "title": "vLLM Inference Overview",
+      "tags": ["vllm", "llm", "inference"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "5s",
+      "time": {"from": "now-15m", "to": "now"},
+      "panels": [
+        {
+          "id": 1, "title": "TTFT p95", "type": "timeseries",
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0},
+          "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+          "targets": [{"refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(vllm:time_to_first_token_seconds_bucket[5m])))", "legendFormat": "p95"}]
+        },
+        {
+          "id": 2, "title": "TPOT p95", "type": "timeseries",
+          "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0},
+          "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+          "targets": [{"refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(vllm:request_time_per_output_token_seconds_bucket[5m])))", "legendFormat": "p95"}]
+        },
+        {
+          "id": 3, "title": "End-to-end latency p95", "type": "timeseries",
+          "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0},
+          "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+          "targets": [{"refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(vllm:e2e_request_latency_seconds_bucket[5m])))", "legendFormat": "p95"}]
+        },
+        {
+          "id": 4, "title": "Queue time p95", "type": "timeseries",
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8},
+          "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+          "targets": [{"refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(vllm:request_queue_time_seconds_bucket[5m])))", "legendFormat": "p95"}]
+        },
+        {
+          "id": 5, "title": "Prefill duration p95", "type": "timeseries",
+          "gridPos": {"h": 8, "w": 8, "x": 8, "y": 8},
+          "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+          "targets": [{"refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(vllm:request_prefill_time_seconds_bucket[5m])))", "legendFormat": "p95"}]
+        },
+        {
+          "id": 6, "title": "Decode duration p95", "type": "timeseries",
+          "gridPos": {"h": 8, "w": 8, "x": 16, "y": 8},
+          "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+          "targets": [{"refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(vllm:request_decode_time_seconds_bucket[5m])))", "legendFormat": "p95"}]
+        },
+        {
+          "id": 7, "title": "Generated tokens/sec", "type": "timeseries",
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 16},
+          "fieldConfig": {"defaults": {"unit": "tokensps"}, "overrides": []},
+          "targets": [{"refId": "A", "expr": "sum(rate(vllm:generation_tokens_total[1m]))", "legendFormat": "tokens/sec"}]
+        },
+        {
+          "id": 8, "title": "Prompt tokens/sec", "type": "timeseries",
+          "gridPos": {"h": 8, "w": 8, "x": 8, "y": 16},
+          "fieldConfig": {"defaults": {"unit": "tokensps"}, "overrides": []},
+          "targets": [{"refId": "A", "expr": "sum(rate(vllm:prompt_tokens_total[1m]))", "legendFormat": "tokens/sec"}]
+        },
+        {
+          "id": 9, "title": "Completed requests/sec", "type": "timeseries",
+          "gridPos": {"h": 8, "w": 8, "x": 16, "y": 16},
+          "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+          "targets": [{"refId": "A", "expr": "sum(rate(vllm:request_success_total[1m]))", "legendFormat": "requests/sec"}]
+        },
+        {
+          "id": 10, "title": "Running requests", "type": "timeseries",
+          "gridPos": {"h": 6, "w": 6, "x": 0, "y": 24},
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+          "targets": [{"refId": "A", "expr": "vllm:num_requests_running", "legendFormat": "running"}]
+        },
+        {
+          "id": 11, "title": "Waiting requests", "type": "timeseries",
+          "gridPos": {"h": 6, "w": 6, "x": 6, "y": 24},
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+          "targets": [{"refId": "A", "expr": "vllm:num_requests_waiting", "legendFormat": "waiting"}]
+        },
+        {
+          "id": 12, "title": "KV-cache utilization", "type": "timeseries",
+          "gridPos": {"h": 6, "w": 6, "x": 12, "y": 24},
+          "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}, "overrides": []},
+          "targets": [{"refId": "A", "expr": "100 * vllm:kv_cache_usage_perc", "legendFormat": "used %"}]
+        },
+        {
+          "id": 13, "title": "Preemptions/sec", "type": "timeseries",
+          "gridPos": {"h": 6, "w": 6, "x": 18, "y": 24},
+          "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+          "targets": [{"refId": "A", "expr": "sum(rate(vllm:num_preemptions_total[5m]))", "legendFormat": "preemptions/sec"}]
+        },
+        {
+          "id": 14, "title": "Prefix cache hit ratio", "type": "timeseries",
+          "gridPos": {"h": 6, "w": 12, "x": 0, "y": 30},
+          "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}, "overrides": []},
+          "targets": [{"refId": "A", "expr": "100 * sum(rate(vllm:prefix_cache_hits_total[5m])) / clamp_min(sum(rate(vllm:prefix_cache_queries_total[5m])), 1e-9)", "legendFormat": "hit ratio %"}]
+        }
+      ]
+    }
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: observability-stack
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v3.5.0
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --storage.tsdb.retention.time=24h
+            - --web.enable-lifecycle
+          ports:
+            - name: http
+              containerPort: 9090
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+            - name: data
+              mountPath: /prometheus
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+        - name: data
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: observability-stack
+spec:
+  type: NodePort
+  selector:
+    app: prometheus
+  ports:
+    - name: http
+      port: 9090
+      targetPort: 9090
+      nodePort: 30518
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: observability-stack
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:12.1.0
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              value: admin
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-admin
+                  key: password
+            - name: GF_USERS_ALLOW_SIGN_UP
+              value: "false"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: datasource
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: dashboard-provider
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: dashboards
+              mountPath: /var/lib/grafana/dashboards
+            - name: llm-d-dashboards
+              mountPath: /var/lib/grafana/llm-d-dashboards
+              readOnly: true
+      volumes:
+        - name: datasource
+          configMap:
+            name: grafana-provisioning-datasources
+        - name: dashboard-provider
+          configMap:
+            name: grafana-dashboard-provider
+        - name: dashboards
+          configMap:
+            name: grafana-vllm-dashboard
+        - name: llm-d-dashboards
+          configMap:
+            name: llm-d-official-dashboards
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: observability-stack
+spec:
+  type: NodePort
+  selector:
+    app: grafana
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      nodePort: 30519
+

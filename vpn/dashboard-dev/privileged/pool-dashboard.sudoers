@@ -1,0 +1,3 @@
+# Review the service user before installing. The root-owned helper validates args.
+ojas ALL=(root) NOPASSWD: /usr/local/sbin/pool-wireguard *
+ojas ALL=(root) NOPASSWD: /usr/local/sbin/pool-k8s *

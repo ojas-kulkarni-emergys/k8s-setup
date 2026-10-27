@@ -1,7 +1,19 @@
 # Isolated prototype. Existing main.sh/config.yaml/VPN files are not modified.
 state_dir: .state
-command_prefix: [sudo, -n, k8s]
-allow_token_generation: false
+base_path: /pool
+public_url: https://flounder-sphere-dab.ngrok-free.dev/pool
+# Enable only after setting up the dedicated WireGuard hub and reachable UDP endpoint.
+enrollment_enabled: false
+wireguard:
+  interface: pool0
+  endpoint: '' # Reachable UDP hostname:port; the ngrok HTTP URL is not a VPN endpoint.
+  server_address: 10.210.0.1
+  # Existing cluster advertises its Tailscale control-plane address. Route that
+  # exact address through the WG hub for new workers without Tailscale installed.
+  allowed_ips: 10.210.0.0/16,100.78.103.3/32
+  apply_peers: false
+command_prefix: [sudo, -n, /usr/local/sbin/pool-k8s]
+allow_token_generation: true
 # SSH transport works over WireGuard, Tailscale, or a trusted LAN.
 remote_execution_enabled: false
 ssh_targets: {}
@@ -19,3 +31,13 @@ scripts_root: ../..
 vpn_pool: 10.210.0.0/16
 # Validate these against real pod/service/LAN networks before implementing VPN.
 reserved_cidrs: [10.1.0.0/16, 10.152.183.0/24, 100.64.0.0/10]
+
+# User-facing cluster directory. IDs must remain stable once memberships exist.
+cluster_id: local
+cluster_name: Office inference pool
+# Add other clusters with operator-reviewed inventory commands. No browser-supplied
+# credentials/commands are accepted. Example SSH key must be read-only and pinned.
+cluster_connections: []
+# - id: research
+#   name: Research cluster
+#   command_prefix: [ssh, -o, BatchMode=yes, -o, StrictHostKeyChecking=yes, pool-reader@control-plane-b, sudo, -n, /usr/local/sbin/pool-k8s]

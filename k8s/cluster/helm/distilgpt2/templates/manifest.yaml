@@ -1,0 +1,70 @@
+# Converted from distilgpt2.deployment(2).yaml; see values.yaml and README.md for chart notes.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: distilgpt2-backend
+  namespace: llm-d-deployments
+  labels:
+    app.kubernetes.io/name: distilgpt2-backend
+    inference.networking.k8s.io/pool: llm-router
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: distilgpt2-backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: distilgpt2-backend
+        inference.networking.k8s.io/pool: llm-router
+    spec:
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai-cpu:latest-x86_64
+          args:
+            - --model=distilgpt2
+            - --host=0.0.0.0
+            - --port=8000
+          ports:
+            - containerPort: 8000
+          volumeMounts:
+            - mountPath: /root/.cache/huggingface
+              name: hf-cache
+              readOnly: true
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+      volumes:
+        - name: hf-cache
+          hostPath:
+            path: {{ .Values.model.hostCachePath | quote }}
+            type: Directory
+          # Optional shared cache: remove hostPath above before enabling nfs.
+          # Wizard settings: llm_d.model_cache_storage: nfs,
+          # llm_d.model_cache_nfs_server and llm_d.model_cache_nfs_path.
+          # Static manifests use literal values; config.yaml is not substituted here.
+          # nfs:
+          #   server: 100.78.103.3
+          #   path: /srv/model-cache/huggingface
+          #   readOnly: true
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: distilgpt2-service
+  namespace: llm-d-deployments
+  labels:
+    inference.networking.k8s.io/pool: llm-router
+spec:
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+  selector:
+    app.kubernetes.io/name: distilgpt2-backend
+

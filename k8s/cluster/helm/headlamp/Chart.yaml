@@ -1,0 +1,6 @@
+apiVersion: v2
+name: headlamp
+description: Headlamp UI and its existing RBAC binding.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

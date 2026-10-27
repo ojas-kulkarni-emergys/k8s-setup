@@ -1,0 +1,45 @@
+#!/usr/bin/python3 -I
+"""Install root-owned. Sudo may call this validator, never arbitrary wg commands."""
+import base64
+import ipaddress
+import json
+import os
+import re
+import subprocess
+import sys
+
+
+def command_for(args, policy):
+    interface=policy['interface']
+    if not re.fullmatch(r'pool[0-9]{1,2}',interface): raise ValueError('Invalid dedicated interface')
+    if args in (["wg","show",interface,"public-key"],
+                ["wg","show",interface,"allowed-ips"],
+                ["wg","show",interface,"latest-handshakes"]):
+        return ['/usr/bin/wg',*args[1:]]
+    if args==['wg-quick','save',interface]: return ['/usr/bin/wg-quick','save',interface]
+    if len(args) not in (6,7) or args[:4]!=['wg','set',interface,'peer']:
+        raise ValueError('Operation not allowed')
+    if len(base64.b64decode(args[4],validate=True))!=32: raise ValueError('Invalid public key')
+    if args[5:]==['remove']: return ['/usr/bin/wg',*args[1:]]
+    if len(args)==7 and args[5]=='allowed-ips':
+        network=ipaddress.IPv4Network(args[6],strict=True)
+        pool=ipaddress.IPv4Network(policy['pool'])
+        if network.prefixlen!=32 or not network.subnet_of(pool): raise ValueError('Address outside managed pool')
+        if str(network.network_address)==policy['server_address']: raise ValueError('Hub address is reserved')
+        return ['/usr/bin/wg',*args[1:]]
+    raise ValueError('Operation not allowed')
+
+
+def main():
+    if os.geteuid()!=0: sys.exit('Run through the configured sudo policy.')
+    path='/etc/pool-dashboard/wireguard.json'
+    info=os.stat(path)
+    if info.st_uid!=0 or info.st_mode & 0o022: sys.exit('Policy must be root-owned and not group/world writable.')
+    with open(path) as f: policy=json.load(f)
+    try: command=command_for(sys.argv[1:],policy)
+    except (ValueError,KeyError,TypeError): sys.exit('WireGuard request rejected by the privileged helper.')
+    result=subprocess.run(command,timeout=15,check=False)
+    sys.exit(result.returncode)
+
+
+if __name__=='__main__': main()

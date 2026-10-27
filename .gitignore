@@ -10,6 +10,7 @@ __pycache__/
 /llm-d/
 .llm-d-port-forwards/
 /distribution/
+/k8s/nfs/srv/
 
 # Distribution / packaging
 .Python

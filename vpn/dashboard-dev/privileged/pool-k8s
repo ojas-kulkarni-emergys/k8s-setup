@@ -1,0 +1,22 @@
+#!/usr/bin/python3 -I
+"""Small root-owned broker for node inventory and worker-token issuance only."""
+import os
+import re
+import subprocess
+import sys
+
+
+def command_for(args):
+    if args==['kubectl','get','nodes','-o','json','--request-timeout=10s']:
+        return ['/snap/bin/k8s',*args]
+    if (len(args)==3 and args[0]=='get-join-token' and args[2]=='--worker'
+            and re.fullmatch(r'[a-z0-9](?:[a-z0-9.-]{0,61}[a-z0-9])?',args[1])):
+        return ['/snap/bin/k8s',*args]
+    raise ValueError('Operation not allowed')
+
+
+if __name__=='__main__':
+    if os.geteuid()!=0:sys.exit('Run through the configured sudo policy.')
+    try:command=command_for(sys.argv[1:])
+    except ValueError:sys.exit('Cluster operation rejected by the privileged helper.')
+    sys.exit(subprocess.run(command,timeout=20,check=False).returncode)

@@ -1,0 +1,5 @@
+{
+  "interface": "pool0",
+  "pool": "10.210.0.0/16",
+  "server_address": "10.210.0.1"
+}
