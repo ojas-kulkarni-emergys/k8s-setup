@@ -15,7 +15,7 @@
       "type": "grafana",
       "id": "grafana",
       "name": "Grafana",
-      "version": "11.3.0"
+      "version": "12.1.0"
     },
     {
       "type": "datasource",
@@ -141,7 +141,7 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "11.3.0",
+      "pluginVersion": "12.1.0",
       "targets": [
         {
           "datasource": {
@@ -262,7 +262,7 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "11.3.0",
+      "pluginVersion": "12.1.0",
       "targets": [
         {
           "datasource": {
@@ -384,7 +384,7 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "11.3.0",
+      "pluginVersion": "12.1.0",
       "targets": [
         {
           "datasource": {
@@ -553,7 +553,7 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "11.3.0",
+      "pluginVersion": "12.1.0",
       "targets": [
         {
           "datasource": {
@@ -721,7 +721,7 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "11.3.0",
+      "pluginVersion": "12.1.0",
       "targets": [
         {
           "datasource": {
@@ -821,7 +821,7 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "11.3.0",
+      "pluginVersion": "12.1.0",
       "targets": [
         {
           "datasource": {

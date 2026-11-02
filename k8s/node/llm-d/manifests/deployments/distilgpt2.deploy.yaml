@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: distilgpt2-backend
+  namespace: llm-d-deployments
+  labels:
+    app.kubernetes.io/name: distilgpt2-backend
+    inference.networking.k8s.io/pool: llm-router
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: distilgpt2-backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: distilgpt2-backend
+        inference.networking.k8s.io/pool: llm-router
+    spec:
+      hostIPC: true        # <--- Add this line here
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai-cpu:latest
+          env:
+            - name: VLLM_TARGET_DEVICE
+              value: "cpu"
+          args:
+            - "--model=distilgpt2"
+            - "--port=8000"
+            - "--gpu-memory-utilization=0.5"
+            - "--max-model-len=512"
+            - "--max-num-seqs=1"
+            - "--kv-cache-memory-bytes=268435456"
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            - name: HF_HOME
+              value: /root/.cache/huggingface
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: OMP_NUM_THREADS
+              value: "2"
+          volumeMounts:
+            - mountPath: /root/.cache/huggingface
+              name: hf-cache
+              readOnly: true
+            - mountPath: /dev/shm          # <--- Add this
+              name: dshm                 # <--- Add this
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "2Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"                   # Fits comfortably within your new 10GB WSL ceiling
+      volumes:
+        - name: hf-cache
+          hostPath:
+            path: /home/ojas/.cache/huggingface
+            type: Directory
+        - name: dshm                       # <--- Add this block
+          emptyDir:
+            medium: Memory
+            sizeLimit: 512Mi               # <--- Allocates 512 MiB of shm memory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: distilgpt2-service
+  namespace: llm-d-deployments
+  labels:
+    inference.networking.k8s.io/pool: llm-router
+spec:
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+  selector:
+    app.kubernetes.io/name: distilgpt2-backend

@@ -4,7 +4,7 @@
 set -euo pipefail
 
 ### GLOBALS ###
-OPENCOST_NAMESPACE="llm-d-monitoring"
+OPENCOST_NAMESPACE="observability-stack"
 PROMETHEUS_ENDPOINT=""
 PROMETHEUS_RELEASE_NAME="llmd"
 INSTALL_PROMETHEUS=false
@@ -37,7 +37,7 @@ Install OpenCost with inference cost tracking for llm-d, or verify an existing
 OpenCost installation is correctly wired to llm-d.
 
 Options:
-  -n, --namespace NAME          OpenCost namespace (default: llm-d-monitoring)
+  -n, --namespace NAME          OpenCost namespace (default: observability-stack)
   --prometheus-endpoint URL     Override auto-detected Prometheus endpoint
   --prometheus-release-name     Prometheus Helm release name (default: llmd)
   --install-prometheus          Force-install kube-prometheus-stack alongside OpenCost
@@ -79,9 +79,12 @@ check_cmd() {
 }
 
 check_dependencies() {
-  for cmd in helm kubectl jq; do
+  for cmd in helm sudo k8s jq; do
     check_cmd "$cmd"
   done
+
+  KUBECTL_BIN="sudo k8s"
+  KCMD_PREFIX="kubectl"
 }
 
 is_openshift() {
@@ -90,9 +93,9 @@ is_openshift() {
 
 check_cluster_reachability() {
   if ! $KCMD cluster-info &>/dev/null; then
-    die "kubectl cannot reach a running Kubernetes cluster. Ensure your kubeconfig is set up correctly."
+    die "sudo k8s kubectl cannot reach a running Kubernetes cluster. Ensure your kubeconfig is set up correctly."
   fi
-  log_info "kubectl can reach the Kubernetes cluster."
+  log_info "sudo k8s kubectl can reach the Kubernetes cluster."
 }
 
 parse_args() {
@@ -126,11 +129,11 @@ parse_args() {
 setup_env() {
   if [[ -n "$KUBERNETES_CONTEXT" ]]; then
     [[ -f "$KUBERNETES_CONTEXT" ]] || die "Context file not found: $KUBERNETES_CONTEXT"
-    KCMD="kubectl --kubeconfig $KUBERNETES_CONTEXT"
+    KCMD="sudo k8s kubectl --kubeconfig $KUBERNETES_CONTEXT"
     HCMD="helm --kubeconfig $KUBERNETES_CONTEXT"
     OCMD="oc --kubeconfig $KUBERNETES_CONTEXT"
   else
-    KCMD="kubectl"
+    KCMD="sudo k8s kubectl"
     HCMD="helm"
     OCMD="oc"
   fi
@@ -149,22 +152,32 @@ setup_env() {
 ### OPENCOST DETECTION ###
 detect_opencost() {
   log_info "Checking for existing OpenCost installation in namespace ${OPENCOST_NAMESPACE}..."
-  OPENCOST_RELEASE=$($HCMD list -n "${OPENCOST_NAMESPACE}" -o json 2>/dev/null \
-    | jq -r '.[] | select(.chart | startswith("opencost")) | "\(.namespace)/\(.name)/\(.app_version)"' \
-    | head -1)
+
+  local helm_json
+  if ! helm_json="$($HCMD list -n "${OPENCOST_NAMESPACE}" -o json 2>&1)"; then
+    die "Helm could not query namespace '${OPENCOST_NAMESPACE}'. Check kubeconfig/context. Helm output: ${helm_json}"
+  fi
+
+  OPENCOST_RELEASE="$(
+    printf '%s' "$helm_json" |
+      jq -r '[.[] | select((.chart // "") | startswith("opencost")) |
+        "\(.namespace)/\(.name)/\(.app_version)"] | .[0] // empty'
+  )"
 
   if [[ -z "$OPENCOST_RELEASE" ]]; then
     log_info "OpenCost not found in namespace ${OPENCOST_NAMESPACE} — proceeding with install."
     OPENCOST_EXISTS=false
-    return
+    return 0
   fi
 
   OPENCOST_EXISTS=true
-  OPENCOST_NS=$(echo "$OPENCOST_RELEASE" | cut -d/ -f1)
-  OPENCOST_RNAME=$(echo "$OPENCOST_RELEASE" | cut -d/ -f2)
-  OPENCOST_VERSION=$(echo "$OPENCOST_RELEASE" | cut -d/ -f3)
+  OPENCOST_NS="$(printf '%s' "$OPENCOST_RELEASE" | cut -d/ -f1)"
+  OPENCOST_RNAME="$(printf '%s' "$OPENCOST_RELEASE" | cut -d/ -f2)"
+  OPENCOST_VERSION="$(printf '%s' "$OPENCOST_RELEASE" | cut -d/ -f3)"
+
   log_info "Found OpenCost release '$OPENCOST_RNAME' in namespace '$OPENCOST_NS' (version: $OPENCOST_VERSION)."
 }
+
 
 
 ### PROMETHEUS DETECTION ###
@@ -235,8 +248,8 @@ prompt_prometheus_install() {
   case "$choice" in
     1) PROMETHEUS_INSTALL_NS="$OPENCOST_NAMESPACE" ;;
     2)
-      read -rp "Prometheus namespace [llm-d-monitoring]: " pns
-      PROMETHEUS_INSTALL_NS="${pns:-llm-d-monitoring}"
+      read -rp "Prometheus namespace [observability-stack]: " pns
+      PROMETHEUS_INSTALL_NS="${pns:-observability-stack}"
       ;;
     [qQ])
       log_info "Re-run after installing Prometheus. Use --prometheus-endpoint to specify its address."
@@ -671,17 +684,17 @@ EOF
   fi
   echo ""
   log_info "Access the OpenCost UI:"
-  log_info "  kubectl port-forward -n ${OPENCOST_NAMESPACE} svc/${OPENCOST_RELEASE_NAME} 9090:9090"
+  log_info "  sudo k8s kubectl port-forward -n ${OPENCOST_NAMESPACE} svc/${OPENCOST_RELEASE_NAME} 9090:9090"
   log_info "  Open: http://localhost:9090"
   echo ""
   local prom_svc_name
   prom_svc_name=$(echo "$PROMETHEUS_ENDPOINT" | sed 's|http[s]*://||' | cut -d. -f1)
   log_info "Access the Prometheus UI:"
-  log_info "  kubectl port-forward -n ${prom_ns} svc/${prom_svc_name} 9092:${prom_port}"
+  log_info "  sudo k8s kubectl port-forward -n ${prom_ns} svc/${prom_svc_name} 9092:${prom_port}"
   log_info "  Open: http://localhost:9092"
   echo ""
   log_info "Query inference cost metrics (start a port-forward first):"
-  log_info "  kubectl port-forward -n ${OPENCOST_NAMESPACE} svc/${OPENCOST_RELEASE_NAME} 9003:9003"
+  log_info "  sudo k8s kubectl port-forward -n ${OPENCOST_NAMESPACE} svc/${OPENCOST_RELEASE_NAME} 9003:9003"
   echo ""
   log_info "  # Raw Prometheus gauges:"
   log_info "  curl -s http://localhost:9003/metrics | grep llm_"

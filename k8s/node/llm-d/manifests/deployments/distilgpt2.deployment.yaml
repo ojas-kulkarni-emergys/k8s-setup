@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
         - name: vllm
-          image: vllm/vllm-openai:latest
+          image: vllm/vllm-openai:cpu-latest
           args:
             - --model=distilgpt2
             - --port=8000

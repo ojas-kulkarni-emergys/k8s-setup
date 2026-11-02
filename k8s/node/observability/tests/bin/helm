@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-STUB_COMMAND=helm exec "$(dirname "$0")/cluster-command" "$@"

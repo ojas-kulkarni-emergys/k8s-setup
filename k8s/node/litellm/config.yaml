@@ -1,0 +1,9 @@
+model_list:
+  - model_name: distilgpt2
+    litellm_params:
+      model: openai/distilgpt2
+      api_base: os.environ/LLMD_ROUTER_URL
+      api_key: sk-local-llmd
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
